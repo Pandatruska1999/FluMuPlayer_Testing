@@ -166,10 +166,49 @@ class _AlbumCard extends StatelessWidget {
                 ? Border.all(color: Colors.blue, width: 2)
                 : null,
           ),
-          child: Column(
+          child: Stack( // ✅ CHANGE: Wrap the entire content in a Stack
             children: [
-              _AlbumCover(album: album),
-              if (isPlaying)
+              Column(
+                children: [
+                  _AlbumCover(album: album),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4),
+                    child: Column(
+                      children: [
+                        Text(
+                          album.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          album.artist,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${album.tracks.length} tracks',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.5),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (isPlaying) // ✅ MOVE: Positioned widget to be direct child of Stack
                 Positioned(
                   top: 8,
                   right: 8,
@@ -185,41 +224,6 @@ class _AlbumCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4),
-                child: Column(
-                  children: [
-                    Text(
-                      album.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      album.artist,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${album.tracks.length} tracks',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
