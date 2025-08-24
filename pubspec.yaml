@@ -1,0 +1,32 @@
+name: flumu
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  audioplayers: ^5.2.1
+  window_manager: ^0.3.0
+  palette_generator: ^0.3.3
+  fluent_ui: ^4.0.0
+  file_picker: ^10.1.0
+  path_provider: ^2.1.1
+  flutter_media_metadata: ^1.0.0
+  path: ^1.8.3
+  flutter_cache_manager: ^3.3.1
+  image: ^4.0.17
+  flutter_soloud: ^3.2.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
