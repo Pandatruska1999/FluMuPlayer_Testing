@@ -39,33 +39,47 @@ class Track {
   final String album;
   final Duration duration;
   final String? albumArtPath;
+  final int trackIndex;
+  final int trackCount;
+  final int year;
+  final String genre;
+  final int bitrate;
+  final int sampleRate;
 
   const Track({
     required this.path,
-    this.title = '',
-    this.artist = '',
-    this.album = '',
-    this.duration = Duration.zero,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.duration,
     this.albumArtPath,
+    this.trackIndex = 0,
+    this.trackCount = 0,
+    this.year = 0,
+    this.genre = '',
+    this.bitrate = 0,
+    this.sampleRate = 0,
   });
 
-  // Helper to get display name from path if metadata is missing
-  String get displayTitle {
-    if (title.isNotEmpty) return title;
-    final fileName = path.split('/').last;
-    return fileName.replaceAll('.mp3', '')
-                   .replaceAll('.wav', '')
-                   .replaceAll('.flac', '');
-  }
+  // Helper methods
+  String get displayTitle => title.isNotEmpty ? title : path.split('/').last;
+  String get displayArtist => artist.isNotEmpty ? artist : 'Unknown Artist';
+  String get displayAlbum => album.isNotEmpty ? album : 'Unknown Album';
   
-  String get displayArtist {
-    if (artist.isNotEmpty) return artist;
-    return 'Unknown Artist';
+  String get qualityInfo {
+    if (bitrate > 0 && sampleRate > 0) {
+      return '${bitrate}kbps • ${sampleRate ~/ 1000}kHz';
+    }
+    return '';
   }
-  
-  String get displayAlbum {
-    if (album.isNotEmpty) return album;
-    return 'Unknown Album';
+
+  String get trackInfo {
+    if (trackCount > 0) {
+      return 'Track $trackIndex of $trackCount';
+    } else if (trackIndex > 0) {
+      return 'Track $trackIndex';
+    }
+    return '';
   }
 }
 

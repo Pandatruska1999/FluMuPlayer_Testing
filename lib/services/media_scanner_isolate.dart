@@ -1,22 +1,32 @@
-// media_scanner_isolate.dart
 import 'dart:isolate';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../models/player_state.dart' as models;
+import 'package:flutter/services.dart';
 
 class MediaScannerIsolate {
   static Future<List<models.Track>> scanDirectory(String directoryPath) async {
     final receivePort = ReceivePort();
     
+    // Get the root isolate token from the main isolate
+    final RootIsolateToken rootIsolateToken = RootIsolateToken.instance!;
+    
     await Isolate.spawn(
       _scanDirectoryIsolate,
-      _IsolateMessage(receivePort.sendPort, directoryPath),
+      _IsolateMessage(
+        receivePort.sendPort, 
+        directoryPath,
+        rootIsolateToken, // Pass the token to the isolate
+      ),
     );
 
     return await receivePort.first as List<models.Track>;
   }
 
   static void _scanDirectoryIsolate(_IsolateMessage message) async {
+    // ✅ Initialize background isolate messenger
+    BackgroundIsolateBinaryMessenger.ensureInitialized(message.rootIsolateToken);
+    
     final List<models.Track> tracks = [];
     final directory = Directory(message.directoryPath);
 
@@ -41,14 +51,13 @@ class MediaScannerIsolate {
             
             print('[ISOLATE] Found audio file: $filePath');
             
-            // Create track with basic info (metadata will be extracted later)
             tracks.add(models.Track(
               path: file.path,
               title: _getTitleFromFileName(file.path),
               artist: 'Unknown Artist',
               album: 'Unknown Album',
               duration: Duration.zero,
-              albumArtPath: null, // Will be extracted later
+              albumArtPath: null,
             ));
           }
         }
@@ -75,6 +84,7 @@ class MediaScannerIsolate {
 class _IsolateMessage {
   final SendPort sendPort;
   final String directoryPath;
+  final RootIsolateToken rootIsolateToken; // Add this field
 
-  _IsolateMessage(this.sendPort, this.directoryPath);
+  _IsolateMessage(this.sendPort, this.directoryPath, this.rootIsolateToken);
 }

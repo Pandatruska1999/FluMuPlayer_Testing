@@ -1,12 +1,11 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as path;
-import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import '../models/player_state.dart' as models;
 import 'audio_service.dart';
-import 'cache_service.dart'; // Added import for AlbumCoverCache
-import 'media_scanner_isolate.dart'; // Add this import
-
+import 'cache_service.dart';
+import 'media_scanner_isolate.dart';
+import 'metadata_service.dart';
 
 class MediaScannerService {
   final AudioService audioService;
@@ -14,7 +13,7 @@ class MediaScannerService {
 
   MediaScannerService({required this.audioService});
 
-    Future<List<models.Track>> scanDirectory(String directoryPath) async {
+  Future<List<models.Track>> scanDirectory(String directoryPath) async {
   if (_isScanning) {
     throw Exception('Scan already in progress');
   }
@@ -30,10 +29,13 @@ class MediaScannerService {
     // Extract metadata on main thread (where plugins work)
     final tracksWithMetadata = await _extractMetadataForTracks(tracks);
     
-    // Pre-cache album arts
-    _preCacheAlbumArtsInBackground(tracksWithMetadata);
+    // Load covers in isolate and update tracks
+    final tracksWithCovers = await _loadCoversInIsolate(tracksWithMetadata);
     
-    return tracksWithMetadata;
+    // Pre-cache album arts
+    _preCacheAlbumArtsInBackground(tracksWithCovers);
+    
+    return tracksWithCovers;
   } catch (e) {
     print('[SCAN ERROR] $e');
     rethrow;
@@ -42,39 +44,71 @@ class MediaScannerService {
   }
 }
 
-Future<List<models.Track>> _extractMetadataForTracks(List<models.Track> tracks) async {
-  final List<models.Track> tracksWithMetadata = [];
+  Future<List<models.Track>> _extractMetadataForTracks(List<models.Track> tracks) async {
+    final List<models.Track> tracksWithMetadata = [];
+    
+    for (final track in tracks) {
+      try {
+        final metadata = await MetadataService.getAudioMetadata(track.path);
+        
+        final duration = Duration(milliseconds: metadata['duration'] as int);
+        
+        tracksWithMetadata.add(models.Track(
+          path: track.path,
+          title: metadata['title'] as String,
+          artist: metadata['artist'] as String,
+          album: metadata['album'] as String,
+          duration: duration,
+          albumArtPath: null, // Will be set after isolate loading
+          trackIndex: metadata['trackIndex'] as int,
+          year: metadata['year'] as int,
+          genre: metadata['genre'] as String,
+          bitrate: metadata['bitrate'] as int,
+        ));
+        
+      } catch (e) {
+        print('[METADATA ERROR] Failed to extract metadata for ${track.path}: $e');
+        // Keep the track with basic info if metadata extraction fails
+        tracksWithMetadata.add(track);
+      }
+    }
+    
+    return tracksWithMetadata;
+  }
+
+Future<List<models.Track>> _loadCoversInIsolate(List<models.Track> tracks) async {
+  print('[SCAN] Loading covers in isolate for ${tracks.length} tracks...');
+  
+  final audioPaths = tracks.map((t) => t.path).toList();
+  final coverResults = await MetadataService.extractCoversBulk(audioPaths);
+  
+  // Update tracks with cover art information AND cache the results
+  final List<models.Track> tracksWithCovers = [];
   
   for (final track in tracks) {
-    try {
-      final metadata = await MetadataRetriever.fromFile(File(track.path));
-      
-      Duration duration = Duration.zero;
-      if (metadata.trackDuration != null) {
-        if (metadata.trackDuration is Duration) {
-          duration = metadata.trackDuration as Duration;
-        } else if (metadata.trackDuration is int) {
-          duration = Duration(milliseconds: metadata.trackDuration as int);
-        }
-      }
-      
-      tracksWithMetadata.add(models.Track(
-        path: track.path,
-        title: metadata.trackName ?? track.title,
-        artist: metadata.trackArtistNames?.join(', ') ?? track.artist,
-        album: metadata.albumName ?? track.album,
-        duration: duration,
-        albumArtPath: metadata.albumArt != null ? track.path : null,
-      ));
-      
-    } catch (e) {
-      print('[METADATA ERROR] Failed to extract metadata for ${track.path}: $e');
-      // Keep the track with basic info if metadata extraction fails
-      tracksWithMetadata.add(track);
+    final coverArt = coverResults[track.path];
+    
+    tracksWithCovers.add(models.Track(
+      path: track.path,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      duration: track.duration,
+      albumArtPath: coverArt != null ? track.path : null, // Use track path as key
+      trackIndex: track.trackIndex,
+      year: track.year,
+      genre: track.genre,
+      bitrate: track.bitrate,
+    ));
+    
+    // MANUALLY CACHE THE COVER ART - THIS IS THE KEY FIX
+    if (coverArt != null) {
+      AlbumCoverCache.cacheCoverArt(track.path, coverArt);
     }
   }
   
-  return tracksWithMetadata;
+  print('[SCAN] Cover loading complete, cached ${coverResults.values.where((c) => c != null).length} covers');
+  return tracksWithCovers;
 }
 
   void _preCacheAlbumArtsInBackground(List<models.Track> tracks) {
@@ -115,15 +149,13 @@ Future<List<models.Track>> _extractMetadataForTracks(List<models.Track> tracks) 
   // Helper method to extract album art from a track
   Future<Uint8List?> extractAlbumArt(String filePath) async {
     try {
-      final file = File(filePath);
-      final metadata = await MetadataRetriever.fromFile(file);
-      return metadata.albumArt;
+      return await MetadataService.extractCoverArt(filePath);
     } catch (e) {
       return null;
     }
   }
 
-  Future<void> preCacheAlbumArts(List<models.Track> tracks) async { // Fixed: changed Track to models.Track
+  Future<void> preCacheAlbumArts(List<models.Track> tracks) async {
     for (final track in tracks) {
       if (track.albumArtPath != null) {
         // Pre-cache in background
