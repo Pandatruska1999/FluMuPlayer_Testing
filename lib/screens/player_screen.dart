@@ -20,6 +20,8 @@ import '../widgets/spatial_audio_mixer.dart';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import '../services/cache_service.dart';
+import 'enhanced_player_screen.dart';
+import 'morph_transition.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -72,6 +74,49 @@ void initState() {
     Colors.purple.withOpacity(0.7),
     Colors.pink.withOpacity(0.7),
   ];
+}
+
+  void _openEnhancedPlayerView() {
+  if (_playerState.playlist.isEmpty) return;
+  
+  final currentTrack = _playerState.playlist[_playerState.currentIndex];
+  
+  showGeneralDialog(
+    context: context,
+    barrierColor: Colors.black.withOpacity(0.9),
+    barrierDismissible: true,
+    barrierLabel: "Close enhanced player", // ADD THIS LINE
+    transitionDuration: const Duration(milliseconds: 600),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return MorphTransition(
+        isOpen: true,
+        child: EnhancedPlayerScreen(
+          currentTrack: currentTrack,
+          isPlaying: _isAudioPlaying,
+          position: _currentPosition,
+          duration: _currentDuration,
+          onPlayPause: _handlePlayPause,
+          onSeek: _handleSeek,
+          onClose: () => Navigator.of(context).pop(),
+          audioService: _audioService,
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curvedAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeInOutCubic,
+      );
+      
+      return ScaleTransition(
+        scale: Tween<double>(begin: 0.8, end: 1.0).animate(curvedAnimation),
+        child: FadeTransition(
+          opacity: curvedAnimation,
+          child: child,
+        ),
+      );
+    },
+  );
 }
   
   void _applySpatialAudio(Map<String, AudioSourcePosition> positions) {
@@ -281,41 +326,47 @@ void _updateTrackColors(Track track) async {
 
 Widget _buildCurrentAlbumCover(Track? currentTrack) {
   if (currentTrack == null || currentTrack.albumArtPath == null) {
-    return AlbumCover(
-      primaryColor: _playerState.primaryColor,
-      secondaryColor: _playerState.secondaryColor,
+    return GestureDetector(
+      onTap: _openEnhancedPlayerView,
+      child: AlbumCover(
+        primaryColor: _playerState.primaryColor,
+        secondaryColor: _playerState.secondaryColor,
+      ),
     );
   }
 
-  return FutureBuilder<Uint8List?>(
-    future: AlbumCoverCache.getAlbumCover(currentTrack.albumArtPath, size: 280),
-    builder: (context, snapshot) {
-      if (snapshot.hasData && snapshot.data != null) {
-        return Container(
-          width: 280,
-          height: 280,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 20,
-                spreadRadius: 2,
-              )
-            ],
-            image: DecorationImage(
-              image: MemoryImage(snapshot.data!),
-              fit: BoxFit.cover,
+  return GestureDetector(
+    onTap: _openEnhancedPlayerView,
+    child: FutureBuilder<Uint8List?>(
+      future: AlbumCoverCache.getAlbumCover(currentTrack.albumArtPath, size: 280),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data != null) {
+          return Container(
+            width: 280,
+            height: 280,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                )
+              ],
+              image: DecorationImage(
+                image: MemoryImage(snapshot.data!),
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-        );
-      } else {
-        return AlbumCover(
-          primaryColor: _playerState.primaryColor,
-          secondaryColor: _playerState.secondaryColor,
-        );
-      }
-    },
+          );
+        } else {
+          return AlbumCover(
+            primaryColor: _playerState.primaryColor,
+            secondaryColor: _playerState.secondaryColor,
+          );
+        }
+      },
+    ),
   );
 }
 
