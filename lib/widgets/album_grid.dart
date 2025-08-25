@@ -299,25 +299,60 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
   }
 
   void _extractDominantColor() async {
-    try {
-      final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
-      if (coverData != null && coverData.isNotEmpty) {
-        final dominantColor = await AlbumCoverCache.extractDominantColorIsolate(coverData);
-        if (mounted && dominantColor != null) {
-          setState(() {
-            _dominantColor = dominantColor;
-          });
+  try {
+    final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
+    if (coverData != null && coverData.isNotEmpty) {
+      final image = img.decodeImage(coverData);
+      if (image != null) {
+        // Sample colors from different regions of the image
+        final List<Offset> samplePoints = [
+          Offset(image.width * 0.2, image.height * 0.2), // Top-left
+          Offset(image.width * 0.8, image.height * 0.2), // Top-right
+          Offset(image.width * 0.5, image.height * 0.5), // Center
+          Offset(image.width * 0.2, image.height * 0.8), // Bottom-left
+          Offset(image.width * 0.8, image.height * 0.8), // Bottom-right
+        ];
+        
+        int totalR = 0, totalG = 0, totalB = 0;
+        int sampleCount = 0;
+        
+        for (final point in samplePoints) {
+          final x = point.dx.toInt();
+          final y = point.dy.toInt();
+          if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
+            final pixel = image.getPixel(x, y);
+            totalR += pixel.r.toInt();
+            totalG += pixel.g.toInt();
+            totalB += pixel.b.toInt();
+            sampleCount++;
+          }
+        }
+        
+        if (sampleCount > 0) {
+          final dominantColor = Color.fromRGBO(
+            totalR ~/ sampleCount,
+            totalG ~/ sampleCount,
+            totalB ~/ sampleCount,
+            1.0,
+          );
+          
+          if (mounted) {
+            setState(() {
+              _dominantColor = dominantColor;
+            });
+          }
         }
       }
-    } catch (e) {
-      print('Error extracting dominant color: $e');
-      if (mounted) {
-        setState(() {
-          _dominantColor = Colors.blue.withOpacity(0.3);
-        });
-      }
+    }
+  } catch (e) {
+    print('Error extracting dominant color: $e');
+    if (mounted) {
+      setState(() {
+        _dominantColor = const Color(0xFF9E9E9E); // Use matte gray on error
+      });
     }
   }
+}
 
   @override
   void dispose() {
@@ -334,14 +369,18 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
   final luminance = _calculateLuminance(baseColor);
   final hsl = HSLColor.fromColor(baseColor);
   
-  if (hsl.saturation < 0.1) {
-    // Grayscale detected - use cool blue-gray palette
-    return HSLColor.fromAHSL(
-      1.0,
-      220, 
-      luminance < 0.4 ? 0.3 : 0.2, // More saturation for dark, less for light
-      luminance < 0.4 ? 0.7 : 0.9, // Lighten dark colors, slightly darken light ones
-    ).toColor();
+  // Check if color is grayscale (saturation near zero)
+  final isGrayscale = hsl.saturation < 0.1;
+  
+  if (isGrayscale) {
+    // For grayscale images, use simple matte gray based on luminance
+    if (luminance < 0.4) {
+      // Dark grayscale -> light matte gray
+      return const Color(0xFF9E9E9E); // Material Grey 500
+    } else {
+      // Light grayscale -> slightly darker matte gray  
+      return const Color(0xFF757575); // Material Grey 600
+    }
   }
   
   // Original algorithm for colored images
@@ -350,9 +389,14 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
         .withLightness(hsl.lightness.clamp(0.6, 0.8))
         .withSaturation(hsl.saturation.clamp(0.7, 1.0))
         .toColor();
+  } else if (luminance > 0.7) {
+    // For very light colors, slightly darken for better visibility
+    final hsl = HSLColor.fromColor(baseColor);
+    return hsl.withLightness(hsl.lightness * 0.9).toColor();
+  } else {
+    // For mid-tone colors, use as-is
+    return baseColor;
   }
-  
-  return baseColor;
 }
 
   void _showAlbumTracks(BuildContext context, Album album) {
@@ -445,7 +489,10 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final hoverColor = _getHoverColor(_dominantColor ?? Colors.blue);
+    // Use matte gray as fallback during loading/errors
+      final hoverColor = _dominantColor != null 
+      ? _getHoverColor(_dominantColor!)
+      : const Color(0xFF9E9E9E);
     
     return GestureDetector(
       onTap: () => _showAlbumTracks(context, widget.album),
