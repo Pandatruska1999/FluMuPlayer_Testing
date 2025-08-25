@@ -4,11 +4,12 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'metadata_service.dart';
-import 'package:image/image.dart' as img; // Fixed: Added alias
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 
 class AlbumCoverCache {
   static final LRUCache<String, Uint8List> _memoryCache = LRUCache(200);
+  static final LRUCache<String, Color> _colorCache = LRUCache(500); // Added color cache
   static final Map<String, Completer<Uint8List?>> _loadingCompleters = {};
   static final Set<String> _failedLoads = {};
 
@@ -58,6 +59,58 @@ class AlbumCoverCache {
     }
 
     return completer.future;
+  }
+
+  // New method: Get cached album color
+  static Future<Color?> getAlbumColor(String? audioFilePath) async {
+    if (audioFilePath == null || audioFilePath.isEmpty) {
+      return Colors.blue;
+    }
+
+    // Check color cache first
+    if (_colorCache.containsKey(audioFilePath)) {
+      return _colorCache[audioFilePath];
+    }
+
+    // If not in cache, try to extract it
+    try {
+      final coverData = await getAlbumCover(audioFilePath);
+      if (coverData != null && coverData.isNotEmpty) {
+        final color = await extractDominantColorIsolate(coverData);
+        if (color != null) {
+          _colorCache[audioFilePath] = color;
+          return color;
+        }
+      }
+    } catch (e) {
+      print('Error getting album color for $audioFilePath: $e');
+    }
+
+    return Colors.blue; // Default fallback
+  }
+
+  // New method: Cache album color
+  static void cacheAlbumColor(String audioFilePath, Color color) {
+    _colorCache[audioFilePath] = color;
+  }
+
+  // New method: Precompute colors for multiple albums
+  static void precomputeColors(List<String> paths) async {
+    for (final path in paths) {
+      if (path != null && !_colorCache.containsKey(path)) {
+        try {
+          final coverData = await getAlbumCover(path);
+          if (coverData != null && coverData.isNotEmpty) {
+            final color = await extractDominantColorIsolate(coverData);
+            if (color != null) {
+              _colorCache[path] = color;
+            }
+          }
+        } catch (e) {
+          print('Error precomputing color for $path: $e');
+        }
+      }
+    }
   }
 
   // Fixed: Only one definition of this method
@@ -177,12 +230,14 @@ class AlbumCoverCache {
 
   static void clearCache() {
     _memoryCache.clear();
+    _colorCache.clear(); // Clear color cache too
     _failedLoads.clear();
     _loadingCompleters.clear();
   }
 
   static void removeFromCache(String path) {
     _memoryCache.remove(path);
+    _colorCache.remove(path); // Remove from color cache too
     _failedLoads.remove(path);
   }
 

@@ -6,6 +6,51 @@ import 'dart:async';
 import 'package:image/image.dart' as img;
 import 'shimmer_loading.dart';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
+
+// Top-level function for isolate color extraction
+Color _isolatedColorExtraction(Uint8List imageData) {
+  try {
+    final image = img.decodeImage(imageData);
+    if (image == null) return const Color(0xFF9E9E9E);
+
+    // Sample colors from different regions of the image
+    final List<Offset> samplePoints = [
+      Offset(image.width * 0.2, image.height * 0.2), // Top-left
+      Offset(image.width * 0.8, image.height * 0.2), // Top-right
+      Offset(image.width * 0.5, image.height * 0.5), // Center
+      Offset(image.width * 0.2, image.height * 0.8), // Bottom-left
+      Offset(image.width * 0.8, image.height * 0.8), // Bottom-right
+    ];
+    
+    int totalR = 0, totalG = 0, totalB = 0;
+    int sampleCount = 0;
+    
+    for (final point in samplePoints) {
+      final x = point.dx.toInt();
+      final y = point.dy.toInt();
+      if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
+        final pixel = image.getPixel(x, y);
+        totalR += pixel.r.toInt();
+        totalG += pixel.g.toInt();
+        totalB += pixel.b.toInt();
+        sampleCount++;
+      }
+    }
+    
+    if (sampleCount > 0) {
+      return Color.fromRGBO(
+        totalR ~/ sampleCount,
+        totalG ~/ sampleCount,
+        totalB ~/ sampleCount,
+        1.0,
+      );
+    }
+    return const Color(0xFF9E9E9E);
+  } catch (e) {
+    return const Color(0xFF9E9E9E);
+  }
+}
 
 class AlbumGrid extends StatefulWidget {
   final List<Album> albums;
@@ -50,10 +95,14 @@ class _AlbumGridState extends State<AlbumGrid> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= 
-        _scrollController.position.maxScrollExtent - 200) {
-      widget.onLoadMore?.call();
-    }
+    if (_scrollDebounce?.isActive ?? false) _scrollDebounce!.cancel();
+    
+    _scrollDebounce = Timer(const Duration(milliseconds: 100), () {
+      if (_scrollController.position.pixels >= 
+          _scrollController.position.maxScrollExtent - 200) {
+        widget.onLoadMore?.call();
+      }
+    });
   }
 
   void _preloadInitialImages() {
@@ -66,6 +115,8 @@ class _AlbumGridState extends State<AlbumGrid> {
     
     if (initialPaths.isNotEmpty) {
       AlbumCoverCache.preloadImages(initialPaths);
+      // Precompute colors for initial albums
+      AlbumCoverCache.precomputeColors(initialPaths);
     }
   }
 
@@ -92,9 +143,10 @@ class _AlbumGridState extends State<AlbumGrid> {
         childAspectRatio: 0.85,
       ),
       itemCount: widget.albums.length + (widget.hasMore ? 1 : 0),
-      addAutomaticKeepAlives: false,
+      addAutomaticKeepAlives: true, // Changed to true for better performance
       addRepaintBoundaries: true,
-      cacheExtent: 1000,
+      cacheExtent: 2000, // Increased cache extent
+      physics: const BouncingScrollPhysics(), // Smoother scrolling
       itemBuilder: (context, index) {
         if (index >= widget.albums.length) {
           return _buildLoadingIndicator();
@@ -104,11 +156,13 @@ class _AlbumGridState extends State<AlbumGrid> {
         final isPlayingAlbum = widget.currentlyPlayingTrack != null &&
             album.tracks.any((track) => track.path == widget.currentlyPlayingTrack?.path);
         
-        return _AlbumCard(
-          album: album,
-          onPlayTrack: widget.onPlayTrack,
-          isPlaying: isPlayingAlbum,
-          scrollController: _scrollController, // Fixed: Added required parameter
+        return RepaintBoundary( // Added RepaintBoundary for performance
+          child: _AlbumCard(
+            album: album,
+            onPlayTrack: widget.onPlayTrack,
+            isPlaying: isPlayingAlbum,
+            scrollController: _scrollController,
+          ),
         );
       },
     );
@@ -126,14 +180,13 @@ class _AlbumGridState extends State<AlbumGrid> {
   }
 }
 
-
 class MouseFollowingGradient extends StatefulWidget {
   final Widget child;
   final Color baseColor;
   final double maxOpacity;
   final double radius;
   final double borderRadius;
-  final ValueChanged<bool>? onHoverChanged; // Add this callback
+  final ValueChanged<bool>? onHoverChanged;
 
   const MouseFollowingGradient({
     super.key,
@@ -142,7 +195,7 @@ class MouseFollowingGradient extends StatefulWidget {
     this.maxOpacity = 0.3,
     this.radius = 100.0,
     this.borderRadius = 12.0,
-    this.onHoverChanged, // Add this parameter
+    this.onHoverChanged,
   });
 
   @override
@@ -152,19 +205,34 @@ class MouseFollowingGradient extends StatefulWidget {
 class _MouseFollowingGradientState extends State<MouseFollowingGradient> {
   Offset _mousePosition = Offset.zero;
   bool _isHovering = false;
+  Timer? _hoverTimer;
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (event) {
+        _hoverTimer?.cancel();
         setState(() {
           _isHovering = true;
           _mousePosition = event.localPosition;
         });
         widget.onHoverChanged?.call(true);
       },
-      onHover: (event) => setState(() => _mousePosition = event.localPosition),
+      onHover: (event) {
+        // Throttle hover updates for better performance
+        _hoverTimer?.cancel();
+        _hoverTimer = Timer(const Duration(milliseconds: 8), () {
+          setState(() => _mousePosition = event.localPosition);
+        });
+      },
       onExit: (event) {
+        _hoverTimer?.cancel();
         setState(() => _isHovering = false);
         widget.onHoverChanged?.call(false);
       },
@@ -180,7 +248,7 @@ class _MouseFollowingGradientState extends State<MouseFollowingGradient> {
                     color: widget.baseColor,
                     maxOpacity: widget.maxOpacity,
                     radius: widget.radius,
-                    borderRadius: widget.borderRadius, // Pass the borderRadius
+                    borderRadius: widget.borderRadius,
                   ),
                 ),
               ),
@@ -196,14 +264,14 @@ class _MouseGradientPainter extends CustomPainter {
   final Color color;
   final double maxOpacity;
   final double radius;
-  final double borderRadius; // Add this parameter
+  final double borderRadius;
 
   _MouseGradientPainter({
     required this.center,
     required this.color,
     required this.maxOpacity,
     required this.radius,
-    required this.borderRadius, // Add this required parameter
+    required this.borderRadius,
   });
 
   @override
@@ -239,11 +307,12 @@ class _MouseGradientPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MouseGradientPainter oldDelegate) {
-    return center != oldDelegate.center ||
+    return center.dx.round() != oldDelegate.center.dx.round() ||
+        center.dy.round() != oldDelegate.center.dy.round() ||
         color != oldDelegate.color ||
         maxOpacity != oldDelegate.maxOpacity ||
         radius != oldDelegate.radius ||
-        borderRadius != oldDelegate.borderRadius; // Add this comparison
+        borderRadius != oldDelegate.borderRadius;
   }
 }
 
@@ -266,13 +335,16 @@ class _AlbumCard extends StatefulWidget {
   State<_AlbumCard> createState() => _AlbumCardState();
 }
 
-class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
+class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
-  late Animation<double> _elevationAnimation;
   bool _isHovering = false;
   Color? _dominantColor;
+  bool _colorExtractionStarted = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -290,69 +362,53 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
     _opacityAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    
-    _elevationAnimation = Tween<double>(begin: 0, end: 2).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
 
+    _loadDominantColor();
+  }
+
+  void _loadDominantColor() async {
+    if (_colorExtractionStarted) return;
+    _colorExtractionStarted = true;
+    
+    // Check if color is already cached
+    final cachedColor = await AlbumCoverCache.getAlbumColor(widget.album.coverArtPath);
+    if (cachedColor != null && mounted) {
+      setState(() {
+        _dominantColor = cachedColor;
+      });
+      return;
+    }
+    
+    // If not cached, extract it (in isolate for performance)
     _extractDominantColor();
   }
 
   void _extractDominantColor() async {
-  try {
-    final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
-    if (coverData != null && coverData.isNotEmpty) {
-      final image = img.decodeImage(coverData);
-      if (image != null) {
-        // Sample colors from different regions of the image
-        final List<Offset> samplePoints = [
-          Offset(image.width * 0.2, image.height * 0.2), // Top-left
-          Offset(image.width * 0.8, image.height * 0.2), // Top-right
-          Offset(image.width * 0.5, image.height * 0.5), // Center
-          Offset(image.width * 0.2, image.height * 0.8), // Bottom-left
-          Offset(image.width * 0.8, image.height * 0.8), // Bottom-right
-        ];
+    try {
+      final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
+      if (coverData != null && coverData.isNotEmpty) {
+        // Use compute to run color extraction in isolate
+        final dominantColor = await compute(_isolatedColorExtraction, coverData);
         
-        int totalR = 0, totalG = 0, totalB = 0;
-        int sampleCount = 0;
-        
-        for (final point in samplePoints) {
-          final x = point.dx.toInt();
-          final y = point.dy.toInt();
-          if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
-            final pixel = image.getPixel(x, y);
-            totalR += pixel.r.toInt();
-            totalG += pixel.g.toInt();
-            totalB += pixel.b.toInt();
-            sampleCount++;
-          }
-        }
-        
-        if (sampleCount > 0) {
-          final dominantColor = Color.fromRGBO(
-            totalR ~/ sampleCount,
-            totalG ~/ sampleCount,
-            totalB ~/ sampleCount,
-            1.0,
-          );
-          
-          if (mounted) {
-            setState(() {
-              _dominantColor = dominantColor;
-            });
+        if (mounted) {
+          setState(() {
+            _dominantColor = dominantColor;
+          });
+          // Cache the color for future use
+          if (widget.album.coverArtPath != null) {
+          AlbumCoverCache.cacheAlbumColor(widget.album.coverArtPath!, dominantColor);
           }
         }
       }
-    }
-  } catch (e) {
-    print('Error extracting dominant color: $e');
-    if (mounted) {
-      setState(() {
-        _dominantColor = const Color(0xFF9E9E9E); // Use matte gray on error
-      });
+    } catch (e) {
+      print('Error extracting dominant color: $e');
+      if (mounted) {
+        setState(() {
+          _dominantColor = const Color(0xFF9E9E9E);
+        });
+      }
     }
   }
-}
 
   @override
   void dispose() {
@@ -360,44 +416,43 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // Add these helper methods for color enhancement
   double _calculateLuminance(Color color) {
     return (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
   }
 
   Color _getHoverColor(Color baseColor) {
-  final luminance = _calculateLuminance(baseColor);
-  final hsl = HSLColor.fromColor(baseColor);
-  
-  // Check if color is grayscale (saturation near zero)
-  final isGrayscale = hsl.saturation < 0.1;
-  
-  if (isGrayscale) {
-    // For grayscale images, use simple matte gray based on luminance
+    final luminance = _calculateLuminance(baseColor);
+    final hsl = HSLColor.fromColor(baseColor);
+    
+    // Check if color is grayscale (saturation near zero)
+    final isGrayscale = hsl.saturation < 0.1;
+    
+    if (isGrayscale) {
+      // For grayscale images, use simple matte gray based on luminance
+      if (luminance < 0.4) {
+        // Dark grayscale -> light matte gray
+        return const Color(0xFF9E9E9E);
+      } else {
+        // Light grayscale -> slightly darker matte gray  
+        return const Color(0xFF757575);
+      }
+    }
+    
+    // Original algorithm for colored images
     if (luminance < 0.4) {
-      // Dark grayscale -> light matte gray
-      return const Color(0xFF9E9E9E); // Material Grey 500
+      return hsl
+          .withLightness(hsl.lightness.clamp(0.6, 0.8))
+          .withSaturation(hsl.saturation.clamp(0.7, 1.0))
+          .toColor();
+    } else if (luminance > 0.7) {
+      // For very light colors, slightly darken for better visibility
+      final hsl = HSLColor.fromColor(baseColor);
+      return hsl.withLightness(hsl.lightness * 0.9).toColor();
     } else {
-      // Light grayscale -> slightly darker matte gray  
-      return const Color(0xFF757575); // Material Grey 600
+      // For mid-tone colors, use as-is
+      return baseColor;
     }
   }
-  
-  // Original algorithm for colored images
-  if (luminance < 0.4) {
-    return hsl
-        .withLightness(hsl.lightness.clamp(0.6, 0.8))
-        .withSaturation(hsl.saturation.clamp(0.7, 1.0))
-        .toColor();
-  } else if (luminance > 0.7) {
-    // For very light colors, slightly darken for better visibility
-    final hsl = HSLColor.fromColor(baseColor);
-    return hsl.withLightness(hsl.lightness * 0.9).toColor();
-  } else {
-    // For mid-tone colors, use as-is
-    return baseColor;
-  }
-}
 
   void _showAlbumTracks(BuildContext context, Album album) {
     showModalBottomSheet(
@@ -489,16 +544,18 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     // Use matte gray as fallback during loading/errors
-      final hoverColor = _dominantColor != null 
-      ? _getHoverColor(_dominantColor!)
-      : const Color(0xFF9E9E9E);
+    final hoverColor = _dominantColor != null 
+        ? _getHoverColor(_dominantColor!)
+        : const Color(0xFF9E9E9E);
     
     return GestureDetector(
       onTap: () => _showAlbumTracks(context, widget.album),
       child: MouseFollowingGradient(
         baseColor: hoverColor,
-        maxOpacity: 0.35, // Increased opacity for better visibility
+        maxOpacity: 0.35,
         radius: 120,
         borderRadius: 12,
         onHoverChanged: (isHovering) {
@@ -507,7 +564,7 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
           });
         },
         child: AnimatedBuilder(
-          animation: widget.scrollController,
+          animation: Listenable.merge([_animationController, widget.scrollController]),
           builder: (context, child) {
             // Calculate parallax offset based on scroll position
             final scrollOffset = widget.scrollController.hasClients 
@@ -596,24 +653,6 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingResonance() {
-    return IgnorePointer(
-      child: Center(
-        child: Container(
-          width: 140,
-          height: 140,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: (_dominantColor ?? Colors.white).withOpacity(0.15),
-              width: 1,
-            ),
-          ),
         ),
       ),
     );
