@@ -3,7 +3,9 @@ import 'dart:collection';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'metadata_service.dart'; // Add this import
+import 'metadata_service.dart';
+import 'package:image/image.dart' as img; // Fixed: Added alias
+import 'package:flutter/material.dart';
 
 class AlbumCoverCache {
   static final LRUCache<String, Uint8List> _memoryCache = LRUCache(200);
@@ -56,6 +58,53 @@ class AlbumCoverCache {
     }
 
     return completer.future;
+  }
+
+  // Fixed: Only one definition of this method
+  static Future<Color?> extractDominantColorIsolate(Uint8List imageData) async {
+    return await compute(_extractDominantColor, imageData);
+  }
+
+  // Fixed: Correct return type and implementation
+  static Color? _extractDominantColor(Uint8List imageData) {
+    try {
+      final image = img.decodeImage(imageData);
+      if (image == null) return Colors.blue;
+      
+      // Simple dominant color extraction from center region
+      final centerX = image.width ~/ 2;
+      final centerY = image.height ~/ 2;
+      final sampleSize = 20;
+      
+      num r = 0, g = 0, b = 0;
+      int sampleCount = 0;
+      
+      for (int x = centerX - sampleSize ~/ 2; x < centerX + sampleSize ~/ 2; x++) {
+        for (int y = centerY - sampleSize ~/ 2; y < centerY + sampleSize ~/ 2; y++) {
+          if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
+            final color = image.getPixel(x, y);
+            r += color.r;
+            g += color.g;
+            b += color.b;
+            sampleCount++;
+          }
+        }
+      }
+      
+      if (sampleCount > 0) {
+        // Fixed: Use Color.fromRGBO correctly
+        return Color.fromRGBO(
+          (r / sampleCount).round(),
+          (g / sampleCount).round(),
+          (b / sampleCount).round(),
+          1.0,
+        );
+      }
+    } catch (e) {
+      print('Error in isolate color extraction: $e');
+    }
+    
+    return Colors.blue;
   }
 
   static Future<Uint8List> _createPlaceholderImage(int size) async {
