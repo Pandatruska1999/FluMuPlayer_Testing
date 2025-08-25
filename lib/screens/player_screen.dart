@@ -17,10 +17,14 @@ import 'media_library_screen.dart';
 import '../widgets/page_transition_switcher.dart';
 import '../widgets/loading_dialog.dart';
 import '../widgets/spatial_audio_mixer.dart';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
+import '../services/cache_service.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
+  
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -31,6 +35,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   late MediaScannerService _mediaScannerService;
   late AnimationController _animationController;
 
+  List<Color> _currentTrackColors = [Colors.blue, Colors.purple, Colors.pink];
+
+
   // Separate audio state from UI state
   Duration _currentPosition = Duration.zero;
   Duration _currentDuration = Duration.zero;
@@ -40,24 +47,33 @@ class _PlayerScreenState extends State<PlayerScreen>
   // UI state
   PlayerState _playerState = const PlayerState();
 
-  @override
-  void initState() {
-    super.initState();
-    _audioService = AudioService();
-    _mediaScannerService = MediaScannerService(audioService: _audioService);
-    
-    // NEW: Initialize SoLoud and THEN set up listeners
-    _audioService.initialize().then((_) {
-      print("SoLoud initialized");
-      _initAudioPlayer(); // Set up listeners after init
-    });
-    
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-  }
+  
 
+
+@override
+void initState() {
+  super.initState();
+  _audioService = AudioService();
+  _mediaScannerService = MediaScannerService(audioService: _audioService);
+  
+  _audioService.initialize().then((_) {
+    print("SoLoud initialized");
+    _initAudioPlayer();
+  });
+  
+  _animationController = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 8),
+  )..repeat(reverse: true);
+  
+  // Initialize with multiple colors
+  _currentTrackColors = [
+    Colors.blue.withOpacity(0.7),
+    Colors.purple.withOpacity(0.7),
+    Colors.pink.withOpacity(0.7),
+  ];
+}
+  
   void _applySpatialAudio(Map<String, AudioSourcePosition> positions) {
     // NEW: Call the new method on our AudioService for each track
     positions.forEach((trackId, position) {
@@ -142,18 +158,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  // REMOVE: _showScanningProgressDialog() is unused
-
   void _handlePlayTrack(Track track) {
-    _audioService.play(track.path);
-    // Update current track info WITHOUT switching tabs
-    setState(() {
-      _playerState = _playerState.copyWith(
-        playlist: [track],
-        currentIndex: 0,
-      );
-    });
-  }
+  _audioService.play(track.path);
+  _updateTrackColors(track); // ADD THIS LINE
+  // Update current track info WITHOUT switching tabs
+  setState(() {
+    _playerState = _playerState.copyWith(
+      playlist: [track],
+      currentIndex: 0,
+    );
+  });
+}
 
   void _handlePlayPause() {
     if (_isAudioPlaying) {
@@ -207,6 +222,140 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  Future<List<Color>> _sampleAlbumColors(String? imagePath) async {
+  if (imagePath == null) return [_playerState.primaryColor, _playerState.secondaryColor];
+  
+  try {
+    final coverData = await AlbumCoverCache.getAlbumCover(imagePath);
+    if (coverData != null && coverData.isNotEmpty) {
+      final image = img.decodeImage(coverData);
+      if (image != null) {
+        // Sample colors from different regions of the image
+        final List<Offset> samplePoints = [
+          Offset(image.width * 0.2, image.height * 0.2), // Top-left
+          Offset(image.width * 0.8, image.height * 0.2), // Top-right
+          Offset(image.width * 0.5, image.height * 0.5), // Center
+          Offset(image.width * 0.2, image.height * 0.8), // Bottom-left
+          Offset(image.width * 0.8, image.height * 0.8), // Bottom-right
+        ];
+        
+        final List<Color> colors = [];
+        
+        for (final point in samplePoints) {
+          final x = point.dx.toInt();
+          final y = point.dy.toInt();
+          if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
+            final pixel = image.getPixel(x, y);
+            // Create a color from the pixel data
+            final color = Color.fromRGBO(
+              pixel.r.toInt(),
+              pixel.g.toInt(),
+              pixel.b.toInt(),
+              1.0,
+            );
+            colors.add(color);
+          }
+        }
+        
+        return colors;
+      }
+    }
+  } catch (e) {
+    print('Error sampling colors: $e');
+  }
+  
+  // Fallback colors
+  return [
+    Colors.blue.withOpacity(0.7),
+    Colors.purple.withOpacity(0.7),
+    Colors.pink.withOpacity(0.7),
+  ];
+}
+
+void _updateTrackColors(Track track) async {
+  final sampledColors = await _sampleAlbumColors(track.albumArtPath);
+  setState(() {
+    _currentTrackColors = sampledColors;
+  });
+}
+
+Widget _buildCurrentAlbumCover(Track? currentTrack) {
+  if (currentTrack == null || currentTrack.albumArtPath == null) {
+    return AlbumCover(
+      primaryColor: _playerState.primaryColor,
+      secondaryColor: _playerState.secondaryColor,
+    );
+  }
+
+  return FutureBuilder<Uint8List?>(
+    future: AlbumCoverCache.getAlbumCover(currentTrack.albumArtPath, size: 280),
+    builder: (context, snapshot) {
+      if (snapshot.hasData && snapshot.data != null) {
+        return Container(
+          width: 280,
+          height: 280,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 20,
+                spreadRadius: 2,
+              )
+            ],
+            image: DecorationImage(
+              image: MemoryImage(snapshot.data!),
+              fit: BoxFit.cover,
+            ),
+          ),
+        );
+      } else {
+        return AlbumCover(
+          primaryColor: _playerState.primaryColor,
+          secondaryColor: _playerState.secondaryColor,
+        );
+      }
+    },
+  );
+}
+
+Widget _buildLightLeaks(List<Color> colors) {
+  return IgnorePointer(
+    child: Container(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.topRight,
+          radius: 1.8,
+          colors: [
+            colors[0].withOpacity(0.15),
+            colors[1 % colors.length].withOpacity(0.1),
+            colors[2 % colors.length].withOpacity(0.05),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.2, 0.4, 1.0],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildOledElements() {
+  return IgnorePointer(
+    child: Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.black.withOpacity(0.9),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
   Widget _buildPlayerTab() {
     final hasCurrentTrack = _playerState.playlist.isNotEmpty;
     final currentTrack = hasCurrentTrack 
@@ -217,12 +366,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       child: Column(
         children: [
           const SizedBox(height: 20),
-          AlbumCover(
-            primaryColor: _playerState.primaryColor,
-            secondaryColor: _playerState.secondaryColor,
-          ),
+          _buildCurrentAlbumCover(currentTrack),
           const SizedBox(height: 24),
-          
           Text(
             hasCurrentTrack ? currentTrack!.displayTitle : 'No track selected',
             style: TextStyle(
@@ -284,32 +429,38 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // Optimized background with reduced blur
   Widget _buildOptimizedBackground() {
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _animationController,
-        builder: (context, child) {
-          return Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  _playerState.primaryColor,
-                  _playerState.secondaryColor,
-                ],
+  return Stack(
+    children: [
+      RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animationController,
+          builder: (context, child) {
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _playerState.primaryColor,
+                    _playerState.secondaryColor,
+                  ],
+                ),
               ),
-            ),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0), // Reduced from 15.0
-              child: Container(
-                color: Colors.black.withOpacity(0.2),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                child: Container(
+                  color: Colors.black.withOpacity(0.2),
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    );
-  }
+      _buildLightLeaks(_currentTrackColors),
+      _buildOledElements(),
+    ],
+  );
+}
 
   @override
   Widget build(BuildContext context) {
