@@ -217,22 +217,14 @@ class _MouseFollowingGradientState extends State<MouseFollowingGradient> {
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (event) {
-        _hoverTimer?.cancel();
         setState(() {
           _isHovering = true;
           _mousePosition = event.localPosition;
         });
         widget.onHoverChanged?.call(true);
       },
-      onHover: (event) {
-        // Throttle hover updates for better performance
-        _hoverTimer?.cancel();
-        _hoverTimer = Timer(const Duration(milliseconds: 8), () {
-          setState(() => _mousePosition = event.localPosition);
-        });
-      },
+      onHover: (event) => setState(() => _mousePosition = event.localPosition), // Immediate update
       onExit: (event) {
-        _hoverTimer?.cancel();
         setState(() => _isHovering = false);
         widget.onHoverChanged?.call(false);
       },
@@ -274,16 +266,15 @@ class _MouseGradientPainter extends CustomPainter {
     required this.borderRadius,
   });
 
-  @override
+   @override
   void paint(Canvas canvas, Size size) {
-    // Create a path with rounded corners to match the card
+    // Only repaint if mouse moved significantly (5px threshold)
     final path = Path()
       ..addRRect(RRect.fromRectAndRadius(
         Rect.fromLTWH(0, 0, size.width, size.height),
         Radius.circular(borderRadius),
       ));
     
-    // Clip to the rounded rectangle
     canvas.clipPath(path);
     
     final gradient = RadialGradient(
@@ -307,8 +298,9 @@ class _MouseGradientPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MouseGradientPainter oldDelegate) {
-    return center.dx.round() != oldDelegate.center.dx.round() ||
-        center.dy.round() != oldDelegate.center.dy.round() ||
+    // Only repaint if mouse moved more than 5 pixels
+    final distanceMoved = (center - oldDelegate.center).distance;
+    return distanceMoved > 5.0 || // Reduced repaint frequency
         color != oldDelegate.color ||
         maxOpacity != oldDelegate.maxOpacity ||
         radius != oldDelegate.radius ||
