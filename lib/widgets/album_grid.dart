@@ -127,12 +127,13 @@ class _AlbumGridState extends State<AlbumGrid> {
 }
 
 
-// Add this class to your album_grid.dart file
 class MouseFollowingGradient extends StatefulWidget {
   final Widget child;
   final Color baseColor;
   final double maxOpacity;
   final double radius;
+  final double borderRadius;
+  final ValueChanged<bool>? onHoverChanged; // Add this callback
 
   const MouseFollowingGradient({
     super.key,
@@ -140,6 +141,8 @@ class MouseFollowingGradient extends StatefulWidget {
     required this.baseColor,
     this.maxOpacity = 0.3,
     this.radius = 100.0,
+    this.borderRadius = 12.0,
+    this.onHoverChanged, // Add this parameter
   });
 
   @override
@@ -153,12 +156,18 @@ class _MouseFollowingGradientState extends State<MouseFollowingGradient> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (event) => setState(() {
-        _isHovering = true;
-        _mousePosition = event.localPosition;
-      }),
+      onEnter: (event) {
+        setState(() {
+          _isHovering = true;
+          _mousePosition = event.localPosition;
+        });
+        widget.onHoverChanged?.call(true);
+      },
       onHover: (event) => setState(() => _mousePosition = event.localPosition),
-      onExit: (event) => setState(() => _isHovering = false),
+      onExit: (event) {
+        setState(() => _isHovering = false);
+        widget.onHoverChanged?.call(false);
+      },
       child: Stack(
         children: [
           widget.child,
@@ -171,6 +180,7 @@ class _MouseFollowingGradientState extends State<MouseFollowingGradient> {
                     color: widget.baseColor,
                     maxOpacity: widget.maxOpacity,
                     radius: widget.radius,
+                    borderRadius: widget.borderRadius, // Pass the borderRadius
                   ),
                 ),
               ),
@@ -186,16 +196,28 @@ class _MouseGradientPainter extends CustomPainter {
   final Color color;
   final double maxOpacity;
   final double radius;
+  final double borderRadius; // Add this parameter
 
   _MouseGradientPainter({
     required this.center,
     required this.color,
     required this.maxOpacity,
     required this.radius,
+    required this.borderRadius, // Add this required parameter
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Create a path with rounded corners to match the card
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Radius.circular(borderRadius),
+      ));
+    
+    // Clip to the rounded rectangle
+    canvas.clipPath(path);
+    
     final gradient = RadialGradient(
       center: Alignment(
         (center.dx - size.width / 2) / (size.width / 2),
@@ -220,7 +242,8 @@ class _MouseGradientPainter extends CustomPainter {
     return center != oldDelegate.center ||
         color != oldDelegate.color ||
         maxOpacity != oldDelegate.maxOpacity ||
-        radius != oldDelegate.radius;
+        radius != oldDelegate.radius ||
+        borderRadius != oldDelegate.borderRadius; // Add this comparison
   }
 }
 
@@ -245,11 +268,9 @@ class _AlbumCard extends StatefulWidget {
 
 class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
   late AnimationController _animationController;
-  late AnimationController _colorFadeController; // Add this
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
   late Animation<double> _elevationAnimation;
-  late Animation<double> _colorFadeAnimation; // Add this
   bool _isHovering = false;
   Color? _dominantColor;
 
@@ -262,12 +283,6 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
     
-    // Add color fade controller
-    _colorFadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
@@ -279,52 +294,55 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
     _elevationAnimation = Tween<double>(begin: 0, end: 2).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    
-    // Color fade animation (0.1 to 0.03 opacity)
-    _colorFadeAnimation = Tween<double>(begin: 0.1, end: 0.03).animate(
-      CurvedAnimation(parent: _colorFadeController, curve: Curves.easeInOut),
-    );
 
     _extractDominantColor();
   }
 
   void _extractDominantColor() async {
-  try {
-    final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
-    if (coverData != null && coverData.isNotEmpty) {
-      final dominantColor = await AlbumCoverCache.extractDominantColorIsolate(coverData);
-      if (mounted && dominantColor != null) { // Add null check here
+    try {
+      final coverData = await AlbumCoverCache.getAlbumCover(widget.album.coverArtPath);
+      if (coverData != null && coverData.isNotEmpty) {
+        final dominantColor = await AlbumCoverCache.extractDominantColorIsolate(coverData);
+        if (mounted && dominantColor != null) {
+          setState(() {
+            _dominantColor = dominantColor;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error extracting dominant color: $e');
+      if (mounted) {
         setState(() {
-          _dominantColor = dominantColor;
+          _dominantColor = Colors.blue.withOpacity(0.3);
         });
       }
     }
-  } catch (e) {
-    print('Error extracting dominant color: $e');
-    if (mounted) {
-      setState(() {
-        _dominantColor = Colors.blue.withOpacity(0.3);
-      });
-    }
   }
-}
 
   @override
   void dispose() {
     _animationController.dispose();
-    _colorFadeController.dispose(); // Dispose the new controller
     super.dispose();
   }
 
-  // Update hover methods to control color fade
-  void _handleHoverEnter() {
-    setState(() => _isHovering = true);
-    _colorFadeController.forward(); // Fade to lighter color
+  // Add these helper methods for color enhancement
+  double _calculateLuminance(Color color) {
+    return (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
   }
 
-  void _handleHoverExit() {
-    setState(() => _isHovering = false);
-    _colorFadeController.reverse(); // Return to original color
+  Color _getHoverColor(Color baseColor) {
+    final luminance = _calculateLuminance(baseColor);
+    
+    if (luminance < 0.4) {
+      // For dark colors, lighten and saturate
+      final hsl = HSLColor.fromColor(baseColor);
+      return hsl.withLightness(hsl.lightness.clamp(0.6, 0.8))
+               .withSaturation(hsl.saturation.clamp(0.7, 1.0))
+               .toColor();
+    } else {
+      // For light colors, use as-is with adjusted opacity
+      return baseColor;
+    }
   }
 
   void _showAlbumTracks(BuildContext context, Album album) {
@@ -344,168 +362,187 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
     );
   }
 
-  @override
-Widget build(BuildContext context) {
-  return GestureDetector(
-    onTap: () => _showAlbumTracks(context, widget.album),
-    child: MouseFollowingGradient(
-      baseColor: _dominantColor ?? Colors.blue,
-      maxOpacity: 0.2, // Reduced opacity for subtle effect
-      radius: 120, // Adjust based on your preference
-      child: AnimatedBuilder(
-        animation: widget.scrollController,
-        builder: (context, child) {
-          // Calculate parallax offset based on scroll position
-          final scrollOffset = widget.scrollController.hasClients 
-              ? widget.scrollController.offset 
-              : 0;
-          final parallaxFactor = 0.1;
-          final parallaxOffset = (scrollOffset * parallaxFactor / 1000).clamp(-0.1, 0.1);
-          
-          return Transform(
-            transform: Matrix4.identity()
-              ..translate(0.0, parallaxOffset * 50)
-              ..scale(_isHovering ? 1.02 : 1.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _getBackgroundColor(),
-                borderRadius: BorderRadius.circular(12),
-                border: widget.isPlaying
-                    ? Border.all(
-                        color: _dominantColor ?? Colors.blue,
-                        width: 2,
-                      )
-                    : null,
-                boxShadow: _getShadows(),
-              ),
-              child: Stack(
-                children: [
-                  Column(
-                    children: [
-                      _buildAlbumCover(),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6),
-                        child: Column(
-                          children: [
-                            Text(
-                              widget.album.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              widget.album.artist,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${widget.album.tracks.length} tracks',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.5),
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (widget.isPlaying)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: _dominantColor ?? Colors.blue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.music_note,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    ),
-  );
-}
-
   Color _getBackgroundColor() {
-  if (widget.wasRecentlyPlayed && _dominantColor != null) {
-    return _dominantColor!.withOpacity(0.1);
+    if (widget.wasRecentlyPlayed && _dominantColor != null) {
+      return _dominantColor!.withOpacity(0.1);
+    }
+    return Colors.white.withOpacity(0.08);
   }
-  return Colors.white.withOpacity(0.08);
-}
 
   List<BoxShadow> _getShadows() {
-  final shadows = <BoxShadow>[];
-  
-  // Base shadow
-  shadows.add(
-    BoxShadow(
-      color: Colors.black.withOpacity(0.2),
-      blurRadius: 8,
-      spreadRadius: 1,
-      offset: const Offset(0, 2),
-    ),
-  );
-  
-  // Ambient breath animation for playing albums
-  if (widget.isPlaying) {
+    final shadows = <BoxShadow>[];
+    
+    // Base shadow
     shadows.add(
       BoxShadow(
-        color: (_dominantColor ?? Colors.blue).withOpacity(_opacityAnimation.value * 0.3),
-        blurRadius: 20,
-        spreadRadius: 3,
+        color: Colors.black.withOpacity(0.2),
+        blurRadius: 8,
+        spreadRadius: 1,
+        offset: const Offset(0, 2),
+      ),
+    );
+    
+    // Universal border glow on hover
+    if (_isHovering) {
+      shadows.add(
+        BoxShadow(
+          color: Colors.white.withOpacity(0.15),
+          blurRadius: 10,
+          spreadRadius: 1,
+        ),
+      );
+    }
+    
+    // Ambient breath animation for playing albums
+    if (widget.isPlaying) {
+      shadows.add(
+        BoxShadow(
+          color: (_dominantColor ?? Colors.blue).withOpacity(_opacityAnimation.value * 0.3),
+          blurRadius: 20,
+          spreadRadius: 3,
+        ),
+      );
+    }
+    
+    return shadows;
+  }
+
+  Widget _buildAlbumCover() {
+    return FutureBuilder<Uint8List?>(
+      future: AlbumCoverCache.getAlbumCover(widget.album.coverArtPath),
+      builder: (context, snapshot) {
+        return Container(
+          width: 120,
+          height: 120,
+          margin: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.blue.withOpacity(0.2),
+            image: snapshot.hasData && snapshot.data != null
+                ? DecorationImage(
+                    image: MemoryImage(snapshot.data!),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+          ),
+          child: snapshot.hasData && snapshot.data != null
+              ? null
+              : const Icon(Icons.album, size: 42, color: Colors.white70),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hoverColor = _getHoverColor(_dominantColor ?? Colors.blue);
+    
+    return GestureDetector(
+      onTap: () => _showAlbumTracks(context, widget.album),
+      child: MouseFollowingGradient(
+        baseColor: hoverColor,
+        maxOpacity: 0.35, // Increased opacity for better visibility
+        radius: 120,
+        borderRadius: 12,
+        onHoverChanged: (isHovering) {
+          setState(() {
+            _isHovering = isHovering;
+          });
+        },
+        child: AnimatedBuilder(
+          animation: widget.scrollController,
+          builder: (context, child) {
+            // Calculate parallax offset based on scroll position
+            final scrollOffset = widget.scrollController.hasClients 
+                ? widget.scrollController.offset 
+                : 0;
+            final parallaxFactor = 0.1;
+            final parallaxOffset = (scrollOffset * parallaxFactor / 1000).clamp(-0.1, 0.1);
+            
+            return Transform(
+              transform: Matrix4.identity()
+                ..translate(0.0, parallaxOffset * 50)
+                ..scale(_isHovering ? 1.02 : 1.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _getBackgroundColor(),
+                  borderRadius: BorderRadius.circular(12),
+                  border: widget.isPlaying
+                      ? Border.all(
+                          color: _dominantColor ?? Colors.blue,
+                          width: 2,
+                        )
+                      : null,
+                  boxShadow: _getShadows(),
+                ),
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        _buildAlbumCover(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6),
+                          child: Column(
+                            children: [
+                              Text(
+                                widget.album.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                widget.album.artist,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${widget.album.tracks.length} tracks',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (widget.isPlaying)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: _dominantColor ?? Colors.blue,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.music_note,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
-  
-  return shadows;
-}
-
-  Widget _buildAlbumCover() {
-  return FutureBuilder<Uint8List?>(
-    future: AlbumCoverCache.getAlbumCover(widget.album.coverArtPath),
-    builder: (context, snapshot) {
-      return Container(
-        width: 120,
-        height: 120,
-        margin: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.blue.withOpacity(0.2),
-          image: snapshot.hasData && snapshot.data != null
-              ? DecorationImage(
-                  image: MemoryImage(snapshot.data!),
-                  fit: BoxFit.cover,
-                )
-              : null,
-        ),
-        child: snapshot.hasData && snapshot.data != null
-            ? null
-            : const Icon(Icons.album, size: 42, color: Colors.white70),
-      );
-    },
-  );
-}
 
   Widget _buildLoadingResonance() {
     return IgnorePointer(
