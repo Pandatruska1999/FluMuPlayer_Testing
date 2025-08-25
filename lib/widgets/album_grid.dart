@@ -331,19 +331,29 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin {
   }
 
   Color _getHoverColor(Color baseColor) {
-    final luminance = _calculateLuminance(baseColor);
-    
-    if (luminance < 0.4) {
-      // For dark colors, lighten and saturate
-      final hsl = HSLColor.fromColor(baseColor);
-      return hsl.withLightness(hsl.lightness.clamp(0.6, 0.8))
-               .withSaturation(hsl.saturation.clamp(0.7, 1.0))
-               .toColor();
-    } else {
-      // For light colors, use as-is with adjusted opacity
-      return baseColor;
-    }
+  final luminance = _calculateLuminance(baseColor);
+  final hsl = HSLColor.fromColor(baseColor);
+  
+  if (hsl.saturation < 0.1) {
+    // Grayscale detected - use cool blue-gray palette
+    return HSLColor.fromAHSL(
+      1.0,
+      220, 
+      luminance < 0.4 ? 0.3 : 0.2, // More saturation for dark, less for light
+      luminance < 0.4 ? 0.7 : 0.9, // Lighten dark colors, slightly darken light ones
+    ).toColor();
   }
+  
+  // Original algorithm for colored images
+  if (luminance < 0.4) {
+    return hsl
+        .withLightness(hsl.lightness.clamp(0.6, 0.8))
+        .withSaturation(hsl.saturation.clamp(0.7, 1.0))
+        .toColor();
+  }
+  
+  return baseColor;
+}
 
   void _showAlbumTracks(BuildContext context, Album album) {
     showModalBottomSheet(
