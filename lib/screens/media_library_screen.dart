@@ -85,7 +85,7 @@ class _MediaLibraryScreenState extends State<MediaLibraryScreen> {
   Widget _buildViewSelector() {
     return Container(
       height: 40,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
