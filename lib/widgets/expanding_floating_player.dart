@@ -14,7 +14,6 @@ class ExpandingFloatingPlayer extends StatefulWidget {
   final ValueChanged<Duration> onSeek;
   final Duration position;
   final Duration duration;
-
   final AudioService audioService;
 
   const ExpandingFloatingPlayer({
@@ -88,7 +87,16 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
         ? widget.playerState.playlist[widget.playerState.currentIndex]
         : null;
 
-    if (!hasCurrentTrack || currentTrack == null) {
+    // Check if the audio service is actually playing a different track
+    final audioServiceTrackPath = widget.audioService.currentFilePath;
+    final isActuallyPlaying = audioServiceTrackPath != null && 
+        currentTrack != null && 
+        audioServiceTrackPath == currentTrack.path &&
+        widget.audioService.isPlaying;
+
+    // Don't show if no track or if the audio service is playing a different track
+    if (!hasCurrentTrack || currentTrack == null || 
+        (audioServiceTrackPath != null && audioServiceTrackPath != currentTrack.path)) {
       return const SizedBox.shrink();
     }
 
@@ -115,13 +123,13 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
               width: 1.5,
             ),
           ),
-          child: _isExpanded ? _buildExpandedView(currentTrack) : _buildMinimizedView(currentTrack),
+          child: _isExpanded ? _buildExpandedView(currentTrack, isActuallyPlaying) : _buildMinimizedView(currentTrack, isActuallyPlaying),
         ),
       ),
     );
   }
 
-  Widget _buildMinimizedView(Track currentTrack) {
+  Widget _buildMinimizedView(Track currentTrack, bool isActuallyPlaying) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -190,10 +198,10 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
             ),
           ),
           
-          // Play/Pause button
+          // Play/Pause button - use actual playback state
           IconButton(
             icon: Icon(
-              widget.isPlaying ? Icons.pause : Icons.play_arrow,
+              isActuallyPlaying ? Icons.pause : Icons.play_arrow,
               color: Colors.white,
               size: 28,
             ),
@@ -214,151 +222,152 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
     );
   }
 
-  Widget _buildExpandedView(Track currentTrack) {
-  return Padding(
-    padding: const EdgeInsets.all(20),
-    child: SingleChildScrollView(
-      child: Column(
-        children: [
-          // Header with minimize button
-          Row(
-            children: [
-              // Album cover
-              FutureBuilder<Uint8List?>(
-                future: currentTrack.albumArtPath != null 
-                    ? AlbumCoverCache.getAlbumCover(currentTrack.albumArtPath!, size: 72)
-                    : Future.value(null),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData && snapshot.data != null) {
-                    return Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        image: DecorationImage(
-                          image: MemoryImage(snapshot.data!),
-                          fit: BoxFit.cover,
+  Widget _buildExpandedView(Track currentTrack, bool isActuallyPlaying) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header with minimize button
+            Row(
+              children: [
+                // Album cover
+                FutureBuilder<Uint8List?>(
+                  future: currentTrack.albumArtPath != null 
+                      ? AlbumCoverCache.getAlbumCover(currentTrack.albumArtPath!, size: 72)
+                      : Future.value(null),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData && snapshot.data != null) {
+                      return Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          image: DecorationImage(
+                            image: MemoryImage(snapshot.data!),
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                      ),
-                    );
-                  } else {
-                    return Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: Colors.blue.withOpacity(0.4),
-                      ),
-                      child: const Icon(Icons.music_note, size: 36, color: Colors.white70),
-                    );
-                  }
-                },
-              ),
-              
-              const SizedBox(width: 16),
-              
-              // Track info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      currentTrack.displayTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      currentTrack.displayArtist,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                      );
+                    } else {
+                      return Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: Colors.blue.withOpacity(0.4),
+                        ),
+                        child: const Icon(Icons.music_note, size: 36, color: Colors.white70),
+                      );
+                    }
+                  },
                 ),
-              ),
-              
-              // Minimize button
-              IconButton(
-                icon: const Icon(
-                  Icons.minimize,
-                  color: Colors.white,
-                  size: 24,
+                
+                const SizedBox(width: 16),
+                
+                // Track info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        currentTrack.displayTitle,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        currentTrack.displayArtist,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-                onPressed: _toggleExpand,
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 20),
-          
-          // Progress bar for scrubbing
-          ProgressBar(
-            position: widget.position,
-            duration: widget.duration,
-            onSeek: widget.onSeek,
-          ),
-          
-          const SizedBox(height: 20),
-          
-          // Playback controls
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                icon: Icon(
-                  widget.isPlaying ? Icons.pause : Icons.play_arrow,
-                  color: Colors.white,
-                  size: 36,
+                
+                // Minimize button
+                IconButton(
+                  icon: const Icon(
+                    Icons.minimize,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  onPressed: _toggleExpand,
                 ),
-                onPressed: widget.onPlayPause,
-              ),
-              
-              const SizedBox(width: 32),
+              ],
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Progress bar for scrubbing
+            ProgressBar(
+              position: widget.position,
+              duration: widget.duration,
+              onSeek: widget.onSeek,
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Playback controls - use actual playback state
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isActuallyPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                  onPressed: widget.onPlayPause,
+                ),
+                
+                const SizedBox(width: 32),
 
-              IconButton(
-                icon: const Icon(
-                  Icons.surround_sound,
-                  color: Colors.white,
-                  size: 28,
+                IconButton(
+                  icon: const Icon(
+                    Icons.surround_sound,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => SpatialAudioMixer(
+                        playerState: widget.playerState,
+                        audioPositions: {},
+                        onPositionsChanged: (positions) {
+                          // Handle position changes
+                        },
+                        audioService: widget.audioService,
+                      ),
+                    );
+                  },
+                  tooltip: 'Spatial Audio Mixer',
                 ),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => SpatialAudioMixer(
-                      playerState: widget.playerState,
-                      audioPositions: {},
-                      onPositionsChanged: (positions) {
-                        // Handle position changes
-                      },
-                      audioService: widget.audioService,
-                    ),
-                  );
-                },
-                tooltip: 'Spatial Audio Mixer',
-              ),
-              
-              // Open player button (full screen)
-              IconButton(
-                icon: const Icon(
-                  Icons.open_in_full,
-                  color: Colors.white,
-                  size: 28,
+                
+                // Open player button (full screen)
+                IconButton(
+                  icon: const Icon(
+                    Icons.open_in_full,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  onPressed: widget.onOpenPlayer,
                 ),
-                onPressed: widget.onOpenPlayer,
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}}
+    );
+  }
+}

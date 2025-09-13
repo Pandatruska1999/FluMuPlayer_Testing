@@ -13,41 +13,47 @@ class PlaylistManager {
   static Track? get currentTrack => 
       _playlist.isNotEmpty ? _playlist[_currentIndex] : null;
 
-  static void addToPlaylist(Track track) {
-    _playlist.add(track);
-    _notifyListeners();
-  }
-
   static void addListener(VoidCallback listener) {
-    _listeners.add(listener);
-  }
+  _listeners.add(listener);
+}
 
-  static void removeListener(VoidCallback listener) {
-    _listeners.remove(listener);
-  }
+static void removeListener(VoidCallback listener) {
+  _listeners.remove(listener);
+}
 
-  static void _notifyListeners() {
-    // Use a copy to avoid concurrent modification
-    final listeners = List<VoidCallback>.from(_listeners);
-    for (final listener in listeners) {
-      listener();
-    }
+static void _notifyListeners() {
+  for (final listener in _listeners) {
+    listener();
   }
+}
+
+// Then call _notifyListeners() in all methods that modify the playlist:
+static void addToPlaylist(Track track) {
+  _playlist.add(track);
+  _notifyListeners();
+}
 
   static void addAllToPlaylist(List<Track> tracks) {
     _playlist.addAll(tracks);
     _notifyListeners();
   }
 
-  static void removeFromPlaylist(int index) {
-    if (index >= 0 && index < _playlist.length) {
-      _playlist.removeAt(index);
-      if (_currentIndex >= index && _currentIndex > 0) {
-        _currentIndex--;
-      }
-      _notifyListeners();
+  
+static (bool wasCurrentTrack, Track? removedTrack) removeFromPlaylist(int index) {
+  if (index >= 0 && index < _playlist.length) {
+    final removedTrack = _playlist[index];
+    final wasCurrentTrack = index == _currentIndex;
+    
+    _playlist.removeAt(index);
+    if (_currentIndex >= index && _currentIndex > 0) {
+      _currentIndex--;
     }
+    
+    _notifyListeners();
+    return (wasCurrentTrack, removedTrack);
   }
+  return (false, null);
+}
 
   static void clearPlaylist() {
     _playlist.clear();

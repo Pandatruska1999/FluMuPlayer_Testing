@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import '../models/player_state.dart';
 import '../services/playlist_manager.dart';
 import '../services/cache_service.dart';
+import '../services/audio_service.dart';
 import 'dart:typed_data';
 
 class PlaylistDialog extends StatefulWidget {
   final ValueChanged<Track> onTrackSelected;
   final VoidCallback onDismiss;
+  final AudioService audioService; // Add audioService parameter
 
   const PlaylistDialog({
     super.key,
     required this.onTrackSelected,
     required this.onDismiss,
+    required this.audioService, // Add audioService parameter
   });
 
   @override
@@ -20,6 +23,8 @@ class PlaylistDialog extends StatefulWidget {
 }
 
 class _PlaylistDialogState extends State<PlaylistDialog> {
+  DateTime _lastSelectionTime = DateTime.now(); // Add this variable
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -84,7 +89,15 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
         return _PlaylistItem(
           track: track,
           isCurrent: isCurrent,
+          audioService: widget.audioService, // Pass audioService
           onTap: () {
+            // Prevent rapid selection
+            final now = DateTime.now();
+            if (now.difference(_lastSelectionTime) < Duration(milliseconds: 500)) {
+              return;
+            }
+            _lastSelectionTime = now;
+  
             PlaylistManager.setCurrentIndex(index);
             widget.onTrackSelected(track);
           },
@@ -104,44 +117,71 @@ class _PlaylistItem extends StatelessWidget {
   final bool isCurrent;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+  final AudioService audioService; // Add audioService parameter
 
   const _PlaylistItem({
     required this.track,
     required this.isCurrent,
     required this.onTap,
     required this.onRemove,
+    required this.audioService, // Add audioService parameter
   });
 
   @override
   Widget build(BuildContext context) {
+    final isCurrentlyPlaying = isCurrent && 
+        audioService.currentFilePath == track.path &&
+        audioService.isPlaying;
+    
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      leading: FutureBuilder<Uint8List?>(
-        future: AlbumCoverCache.getAlbumCover(track.albumArtPath, size: 40),
-        builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data != null) {
-            return Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                image: DecorationImage(
-                  image: MemoryImage(snapshot.data!),
-                  fit: BoxFit.cover,
+      leading: Stack(
+        children: [
+          FutureBuilder<Uint8List?>(
+            future: AlbumCoverCache.getAlbumCover(track.albumArtPath, size: 40),
+            builder: (context, snapshot) {
+              if (snapshot.hasData && snapshot.data != null) {
+                return Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    image: DecorationImage(
+                      image: MemoryImage(snapshot.data!),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                );
+              }
+              return Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.blue.withOpacity(0.3),
+                ),
+                child: const Icon(Icons.music_note, size: 20, color: Colors.white70),
+              );
+            },
+          ),
+          if (isCurrentlyPlaying)
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.play_arrow,
+                  size: 12,
+                  color: Colors.white,
                 ),
               ),
-            );
-          }
-          return Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              color: Colors.blue.withOpacity(0.3),
             ),
-            child: const Icon(Icons.music_note, size: 20, color: Colors.white70),
-          );
-        },
+        ],
       ),
       title: Text(
         track.displayTitle,

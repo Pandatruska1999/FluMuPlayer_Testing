@@ -3,15 +3,18 @@ import 'package:flutter/material.dart';
 import '../services/playlist_manager.dart';
 import '../models/player_state.dart';
 import 'playlist_dialog.dart';
+import '../services/audio_service.dart';
 
 class FloatingPlaylistButton extends StatefulWidget {
   final ValueChanged<Track> onTrackSelected;
   final int playlistItemCount;
+  final AudioService audioService;
 
   const FloatingPlaylistButton({
     super.key,
     required this.onTrackSelected,
     required this.playlistItemCount,
+    required this.audioService,
   });
 
   @override
@@ -23,6 +26,7 @@ class _FloatingPlaylistButtonState extends State<FloatingPlaylistButton>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   bool _isDialogOpen = false;
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
@@ -44,31 +48,55 @@ class _FloatingPlaylistButtonState extends State<FloatingPlaylistButton>
   @override
   void dispose() {
     _animationController.dispose();
+    _removeOverlay();
     super.dispose();
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    _isDialogOpen = false;
   }
 
   void _toggleDialog() {
     if (_isDialogOpen) {
-      Navigator.of(context).pop();
-      _isDialogOpen = false;
+      _removeOverlay();
     } else {
-      showDialog(
-        context: context,
-        builder: (context) => PlaylistDialog(
-          onTrackSelected: (track) {
-            widget.onTrackSelected(track);
-            Navigator.of(context).pop();
-            _isDialogOpen = false;
-          },
-          onDismiss: () {
-            Navigator.of(context).pop();
-            _isDialogOpen = false;
-          },
-        ),
-      );
-      _isDialogOpen = true;
+      _showDialog();
     }
   }
+
+  void _showDialog() {
+  final overlayState = Overlay.of(context);
+  
+  _overlayEntry = OverlayEntry(
+    builder: (context) => Stack(
+      children: [
+        // Semi-transparent background
+        GestureDetector(
+          onTap: _removeOverlay,
+          child: Container(
+            color: Colors.black.withOpacity(0.5),
+          ),
+        ),
+        // Playlist dialog
+        Center(
+          child: PlaylistDialog(
+            onTrackSelected: (track) {
+              widget.onTrackSelected(track);
+              _removeOverlay();
+            },
+            onDismiss: _removeOverlay,
+            audioService: widget.audioService, // Pass the audio service
+          ),
+        ),
+      ],
+    ),
+  );
+  
+  overlayState.insert(_overlayEntry!);
+  _isDialogOpen = true;
+}
 
   void _animateButton() {
     if (_animationController.status == AnimationStatus.completed) {
@@ -82,7 +110,7 @@ class _FloatingPlaylistButtonState extends State<FloatingPlaylistButton>
   Widget build(BuildContext context) {
     return Positioned(
       right: 20,
-      bottom: 160, // Positioned above the spatial audio button
+      bottom: 160,
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: FloatingActionButton(

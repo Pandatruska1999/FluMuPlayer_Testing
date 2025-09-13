@@ -37,6 +37,8 @@ class PlayerSettings {
 class AudioService {
   final SoLoud _soLoud = SoLoud.instance;
 
+  bool _isPlaying = false;
+
   // Loaded AudioSources by path
   final Map<String, AudioSource> _sources = {};
 
@@ -149,7 +151,9 @@ class AudioService {
   PlayerSettings get pendingSettings => _pendingSettings;
   PlayerSettings get appliedSettings => _appliedSettings;
 
-  Future<void> play(
+  // In your AudioService class, modify the play method:
+
+Future<void> play(
   String path, {
   double? volume,
   double? pan,
@@ -157,22 +161,23 @@ class AudioService {
   bool? is3DEnabled,
   AudioSourcePosition? spatialPosition,
 }) async {
+  // Prevent multiple simultaneous play calls
+  if (_isPlaying) {
+    print('Already playing, ignoring duplicate play call');
+    return;
+  }
+
+  _isPlaying = true;
+  
   try {
-    final samePath = _currentPath == path && 
-                    _currentHandle != null && 
-                    _soLoud.getIsValidVoiceHandle(_currentHandle!);
-    
-    if (samePath) {
-      // Same song - check if paused and resume
-      if (_soLoud.getPause(_currentHandle!)) {
-        await resume();
-      }
-      // If already playing, do nothing or update settings if needed
-      return;
+    // First, stop any currently playing track
+    if (_currentHandle != null && _soLoud.getIsValidVoiceHandle(_currentHandle!)) {
+      await _soLoud.stop(_currentHandle!);
     }
     
-    // Different song or no song playing - stop current and start new
-    await stop();
+    // Reset current state
+    _currentHandle = null;
+    _currentPath = null;
 
     final src = await _loadSource(path);
 
@@ -216,7 +221,16 @@ class AudioService {
     }
   } catch (e) {
     print('AudioService.play() error: $e');
+  } finally {
+    _isPlaying = false;
   }
+}
+
+bool isTrackPlaying(String path) {
+  return _currentPath == path && 
+         _currentHandle != null && 
+         _soLoud.getIsValidVoiceHandle(_currentHandle!) &&
+         !_soLoud.getPause(_currentHandle!);
 }
 
   Future<void> setSpatialPosition(

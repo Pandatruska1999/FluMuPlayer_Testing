@@ -2,12 +2,14 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/player_state.dart';
 import '../services/cache_service.dart';
+import '../services/audio_service.dart'; // Add this import
 
 class FloatingPlayer extends StatelessWidget {
   final PlayerState playerState;
   final bool isPlaying;
   final VoidCallback onPlayPause;
   final VoidCallback onOpenPlayer;
+  final AudioService audioService; // Add this parameter
 
   const FloatingPlayer({
     super.key,
@@ -15,6 +17,7 @@ class FloatingPlayer extends StatelessWidget {
     required this.isPlaying,
     required this.onPlayPause,
     required this.onOpenPlayer,
+    required this.audioService, // Add this parameter
   });
 
   @override
@@ -24,14 +27,23 @@ class FloatingPlayer extends StatelessWidget {
         ? playerState.playlist[playerState.currentIndex]
         : null;
 
-    if (!hasCurrentTrack || currentTrack == null) {
+    // Check if the audio service is actually playing a different track
+    final audioServiceTrackPath = audioService.currentFilePath;
+    final isActuallyPlaying = audioServiceTrackPath != null && 
+        currentTrack != null && 
+        audioServiceTrackPath == currentTrack.path &&
+        audioService.isPlaying;
+
+    // Don't show if no track or if the audio service is playing a different track
+    if (!hasCurrentTrack || currentTrack == null || 
+        (audioServiceTrackPath != null && audioServiceTrackPath != currentTrack.path)) {
       return const SizedBox.shrink();
     }
 
     return AnimatedSlide(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      offset: const Offset(0, 0), // Always visible when called
+      offset: const Offset(0, 0),
       child: Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(12),
@@ -115,10 +127,10 @@ class FloatingPlayer extends StatelessWidget {
               ),
             ),
             
-            // Play/Pause button
+            // Play/Pause button - use actual playback state
             IconButton(
               icon: Icon(
-                isPlaying ? Icons.pause : Icons.play_arrow,
+                isActuallyPlaying ? Icons.pause : Icons.play_arrow,
                 color: Colors.white,
                 size: 24,
               ),

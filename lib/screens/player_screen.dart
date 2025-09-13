@@ -39,6 +39,10 @@
     late MediaScannerService _mediaScannerService;
     late AnimationController _animationController;
 
+    bool _isProcessingPlayRequest = false;
+
+    DateTime _lastPlayTime = DateTime.now();
+
     List<Color> _currentTrackColors = [Colors.blue, Colors.purple, Colors.pink];
 
 
@@ -60,6 +64,8 @@
     _audioService = AudioService();
     _mediaScannerService = MediaScannerService(audioService: _audioService);
     
+    PlaylistManager.addListener(_handlePlaylistChanged);
+
     _audioService.initialize().then((_) {
       print("SoLoud initialized");
       _initAudioPlayer();
@@ -242,7 +248,31 @@
       }
     }
 
-    void _handlePlayTrack(Track track) {
+void _handlePlayTrack(Track track) async {
+  // Prevent rapid clicking (at least 200ms between plays)
+  final now = DateTime.now();
+  if (now.difference(_lastPlayTime) < Duration(milliseconds: 200)) {
+    return;
+  }
+  _lastPlayTime = now;
+  
+  // If already processing a play request, ignore this one
+  if (_isProcessingPlayRequest) {
+    return;
+  }
+  
+  _isProcessingPlayRequest = true;
+  
+  try {
+    // If the same track is already playing, just toggle play/pause
+    if (_audioService.isTrackPlaying(track.path)) {
+      _handlePlayPause();
+      return;
+    }
+    
+    // Stop any currently playing track before starting a new one
+    await _audioService.stop();
+    
     // Add to playlist if not already there
     if (!PlaylistManager.playlist.any((t) => t.path == track.path)) {
       PlaylistManager.addToPlaylist(track);
@@ -254,19 +284,42 @@
       PlaylistManager.setCurrentIndex(index);
     }
     
-    _audioService.play(track.path);
+    await _audioService.play(track.path);
     _updateTrackColors(track);
     
     // Update current track info WITHOUT switching tabs
-    setState(() {
-      _playerState = _playerState.copyWith(
-        playlist: PlaylistManager.playlist,
-        currentIndex: PlaylistManager.currentIndex,
-      );
-    });
-  } 
-
-  void _handlePlaylistChanged() {
+    if (mounted) {
+      setState(() {
+        _playerState = _playerState.copyWith(
+          playlist: PlaylistManager.playlist,
+          currentIndex: PlaylistManager.currentIndex,
+        );
+        _isAudioPlaying = true;
+      });
+    }
+  } catch (e) {
+    print('Error playing track: $e');
+  } finally {
+    _isProcessingPlayRequest = false;
+  }
+}
+  // In your _PlayerScreenState class, modify the _handlePlaylistChanged method
+void _handlePlaylistChanged() {
+  // Check if the currently playing track is still in the playlist
+  final currentTrackPath = _audioService.currentFilePath;
+  if (currentTrackPath != null) {
+    final isTrackStillInPlaylist = PlaylistManager.playlist
+        .any((track) => track.path == currentTrackPath);
+    
+    if (!isTrackStillInPlaylist) {
+      // The currently playing track was removed from the playlist
+      _audioService.stop();
+      setState(() {
+        _isAudioPlaying = false;
+      });
+    }
+  }
+  
   setState(() {
     _playerState = _playerState.copyWith(
       playlist: PlaylistManager.playlist,
@@ -662,6 +715,7 @@
               FloatingPlaylistButton(
             onTrackSelected: _handlePlayTrack,
             playlistItemCount: PlaylistManager.playlist.length,
+            audioService: _audioService,
           ),
             
             if (_playerState.isLoading)
