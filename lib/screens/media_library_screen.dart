@@ -7,6 +7,9 @@ import '../widgets/track_list.dart';
 import '../services/media_scanner_service.dart';
 import '../services/audio_service.dart';
 import '../widgets/expanding_floating_player.dart';
+import '../services/playlist_manager.dart';
+import '../widgets/floating_playlist_button.dart';
+
 
 class MediaLibraryScreen extends StatefulWidget {
   final PlayerState playerState;
@@ -198,6 +201,13 @@ class _MediaLibraryScreenState extends State<MediaLibraryScreen> {
             key: const ValueKey('albums_view'),
             albums: widget.playerState.albums,
             onPlayTrack: widget.onPlayTrack,
+            onAddToPlaylist: (track) {
+              // Add track to playlist
+              PlaylistManager.addToPlaylist(track);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Added "${track.displayTitle}" to playlist')),
+              );
+            },
             currentlyPlayingTrack: currentTrack,
           )
         : _buildEmptyState();
@@ -215,6 +225,13 @@ class _MediaLibraryScreenState extends State<MediaLibraryScreen> {
             tracks: widget.playerState.allTracks,
             onPlayTrack: widget.onPlayTrack,
             currentlyPlayingTrack: currentTrack,
+            onAddToPlaylist: (track) {
+              // Add track to playlist
+              PlaylistManager.addToPlaylist(track);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Added "${track.displayTitle}" to playlist')),
+              );
+            },
           )
         : _buildEmptyState();
   }
@@ -229,58 +246,78 @@ class _MediaLibraryScreenState extends State<MediaLibraryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  const Text(
-                    'Media Library',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+Widget build(BuildContext context) {
+  return Stack(
+    children: [
+      Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                const Text(
+                  'Media Library',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.add, color: Colors.white),
-                    onPressed: () => _pickFolder(context),
-                    tooltip: 'Add music folder',
-                  ),
-                ],
-              ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  onPressed: () => _pickFolder(context),
+                  tooltip: 'Add music folder',
+                ),
+              ],
             ),
-            
-            if (widget.playerState.albums.isNotEmpty || 
-                widget.playerState.allTracks.isNotEmpty)
-              _buildViewSelector(),
-            
-            Expanded(
-              child: _buildContent(),
-            ),
-          ],
-        ),
-        
-        Positioned(
-          left: 20.0,
-          bottom: 20.0,
-          child: ExpandingFloatingPlayer(
-            playerState: widget.playerState,
-            isPlaying: widget.isPlaying,
-            onPlayPause: widget.onPlayPause,
-            onOpenPlayer: widget.onSwitchToPlayer,
-            onSeek: widget.onSeek,
-            position: widget.position,
-            duration: widget.duration,
-            audioService: widget.audioService,
           ),
+          
+          if (widget.playerState.albums.isNotEmpty || 
+              widget.playerState.allTracks.isNotEmpty)
+            _buildViewSelector(),
+          
+          Expanded(
+            child: _buildContent(),
+          ),
+        ],
+      ),
+      
+      // Existing ExpandingFloatingPlayer
+      Positioned(
+        left: 20.0,
+        bottom: 20.0,
+        child: ExpandingFloatingPlayer(
+          playerState: widget.playerState,
+          isPlaying: widget.isPlaying,
+          onPlayPause: widget.onPlayPause,
+          onOpenPlayer: widget.onSwitchToPlayer,
+          onSeek: widget.onSeek,
+          position: widget.position,
+          duration: widget.duration,
+          audioService: widget.audioService,
         ),
-      ],
-    );
-  }
+      ),
+      /*
+      // ADD FLOATING PLAYLIST BUTTON HERE
+      FloatingPlaylistButton(
+        onTrackSelected: (track) {
+          // Add to playlist if not already there
+          if (!PlaylistManager.playlist.any((t) => t.path == track.path)) {
+            PlaylistManager.addToPlaylist(track);
+          }
+          
+          // Set as current track
+          final index = PlaylistManager.playlist.indexWhere((t) => t.path == track.path);
+          if (index != -1) {
+            PlaylistManager.setCurrentIndex(index);
+          }
+          
+          widget.onPlayTrack(track);
+        },
+        playlistItemCount: PlaylistManager.playlist.length,
+      ),*/
+    ],
+  );
+}
 }

@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'shimmer_loading.dart';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../services/playlist_manager.dart';
 
 // Top-level function for isolate color extraction
 Color _isolatedColorExtraction(Uint8List imageData) {
@@ -55,6 +56,7 @@ Color _isolatedColorExtraction(Uint8List imageData) {
 class AlbumGrid extends StatefulWidget {
   final List<Album> albums;
   final ValueChanged<Track> onPlayTrack;
+  final ValueChanged<Track> onAddToPlaylist; // Add this
   final Track? currentlyPlayingTrack;
   final VoidCallback? onLoadMore;
   final bool hasMore;
@@ -63,6 +65,7 @@ class AlbumGrid extends StatefulWidget {
     super.key,
     required this.albums,
     required this.onPlayTrack,
+    required this.onAddToPlaylist,
     this.currentlyPlayingTrack,
     this.onLoadMore,
     this.hasMore = false,
@@ -160,6 +163,7 @@ class _AlbumGridState extends State<AlbumGrid> {
           child: _AlbumCard(
             album: album,
             onPlayTrack: widget.onPlayTrack,
+            onAddToPlaylist: widget.onAddToPlaylist,
             isPlaying: isPlayingAlbum,
             scrollController: _scrollController,
           ),
@@ -312,6 +316,7 @@ class _AlbumCard extends StatefulWidget {
   final Album album;
   final ValueChanged<Track> onPlayTrack;
   final bool isPlaying;
+  final ValueChanged<Track> onAddToPlaylist;
   final bool wasRecentlyPlayed;
   final ScrollController scrollController;
 
@@ -319,6 +324,7 @@ class _AlbumCard extends StatefulWidget {
     required this.album,
     required this.onPlayTrack,
     required this.isPlaying,
+    required this.onAddToPlaylist,
     this.wasRecentlyPlayed = false,
     required this.scrollController,
   });
@@ -458,6 +464,13 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin, A
         return _AlbumTracksModal(
           album: album,
           onPlayTrack: widget.onPlayTrack,
+          onAddToPlaylist: (track) {
+            // Add track to playlist
+            PlaylistManager.addToPlaylist(track);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Added "${track.displayTitle}" to playlist')),
+            );
+          },
         );
       },
     );
@@ -654,10 +667,12 @@ class _AlbumCardState extends State<_AlbumCard> with TickerProviderStateMixin, A
 class _AlbumTracksModal extends StatelessWidget {
   final Album album;
   final ValueChanged<Track> onPlayTrack;
+  final ValueChanged<Track> onAddToPlaylist;
 
   const _AlbumTracksModal({
     required this.album,
     required this.onPlayTrack,
+    required this.onAddToPlaylist,
   });
 
   @override
@@ -729,6 +744,7 @@ class _AlbumTracksModal extends StatelessWidget {
                     constraints: const BoxConstraints(),
                   ),
                   onTap: () => onPlayTrack(track),
+                  onLongPress: () => onAddToPlaylist(track),
                 );
               },
             ),

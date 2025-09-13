@@ -22,6 +22,8 @@ import 'package:image/image.dart' as img;
 import '../services/cache_service.dart';
 import 'enhanced_player_screen.dart';
 import 'morph_transition.dart';
+import '../services/playlist_manager.dart';
+import '../widgets/floating_playlist_button.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -118,6 +120,40 @@ void initState() {
     },
   );
 }
+
+  void _handleNext() {
+  if (PlaylistManager.playlist.isEmpty) return;
+  
+  PlaylistManager.nextTrack();
+  final nextTrack = PlaylistManager.currentTrack;
+  if (nextTrack != null) {
+    _audioService.play(nextTrack.path);
+    _updateTrackColors(nextTrack);
+    setState(() {
+      _playerState = _playerState.copyWith(
+        playlist: PlaylistManager.playlist,
+        currentIndex: PlaylistManager.currentIndex,
+      );
+    });
+  }
+}
+
+void _handlePrevious() {
+  if (PlaylistManager.playlist.isEmpty) return;
+  
+  PlaylistManager.previousTrack();
+  final previousTrack = PlaylistManager.currentTrack;
+  if (previousTrack != null) {
+    _audioService.play(previousTrack.path);
+    _updateTrackColors(previousTrack);
+    setState(() {
+      _playerState = _playerState.copyWith(
+        playlist: PlaylistManager.playlist,
+        currentIndex: PlaylistManager.currentIndex,
+      );
+    });
+  }
+}
   
   void _applySpatialAudio(Map<String, AudioSourcePosition> positions) {
     // NEW: Call the new method on our AudioService for each track
@@ -204,13 +240,25 @@ void initState() {
   }
 
   void _handlePlayTrack(Track track) {
+  // Add to playlist if not already there
+  if (!PlaylistManager.playlist.any((t) => t.path == track.path)) {
+    PlaylistManager.addToPlaylist(track);
+  }
+  
+  // Set as current track
+  final index = PlaylistManager.playlist.indexWhere((t) => t.path == track.path);
+  if (index != -1) {
+    PlaylistManager.setCurrentIndex(index);
+  }
+  
   _audioService.play(track.path);
-  _updateTrackColors(track); // ADD THIS LINE
+  _updateTrackColors(track);
+  
   // Update current track info WITHOUT switching tabs
   setState(() {
     _playerState = _playerState.copyWith(
-      playlist: [track],
-      currentIndex: 0,
+      playlist: PlaylistManager.playlist,
+      currentIndex: PlaylistManager.currentIndex,
     );
   });
 }
@@ -450,8 +498,8 @@ Widget _buildOledElements() {
             isMuted: _playerState.isMuted,
             volume: _playerState.volume,
             onPlayPause: _handlePlayPause,
-            onPrevious: () {},
-            onNext: () {},
+            onPrevious: _handlePrevious,  // Updated
+            onNext: _handleNext,          // Updated
             onToggleMute: _handleToggleMute,
             onVolumeChanged: _handleVolumeChange,
           ),
@@ -598,6 +646,11 @@ Widget _buildOledElements() {
                 ),
               ),
             ),
+
+            FloatingPlaylistButton(
+          onTrackSelected: _handlePlayTrack,
+          playlistItemCount: PlaylistManager.playlist.length,
+        ),
           
           if (_playerState.isLoading)
             Container(

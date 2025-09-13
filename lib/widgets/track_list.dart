@@ -9,6 +9,7 @@ class TrackList extends StatefulWidget {
   final Track? currentlyPlayingTrack;
   final VoidCallback? onLoadMore;
   final bool hasMore;
+  final ValueChanged<Track> onAddToPlaylist; // Add this
 
   const TrackList({
     super.key,
@@ -17,6 +18,7 @@ class TrackList extends StatefulWidget {
     this.currentlyPlayingTrack,
     this.onLoadMore,
     this.hasMore = false,
+    required this.onAddToPlaylist, // Add this
   });
 
   @override
@@ -66,19 +68,20 @@ class _TrackListState extends State<TrackList> {
       addRepaintBoundaries: true,
       cacheExtent: 1000,
       itemBuilder: (context, index) {
-        if (index >= widget.tracks.length) {
-          return _buildLoadingIndicator();
-        }
-        
-        final track = widget.tracks[index];
-        final isCurrentlyPlaying = widget.currentlyPlayingTrack?.path == track.path;
-        
-        return _TrackTile(
-          track: track,
-          onPlayTrack: widget.onPlayTrack,
-          isPlaying: isCurrentlyPlaying,
-        );
-      },
+  if (index >= widget.tracks.length) {
+    return _buildLoadingIndicator();
+  }
+  
+  final track = widget.tracks[index];
+  final isCurrentlyPlaying = widget.currentlyPlayingTrack?.path == track.path;
+  
+  return _TrackTile(
+    track: track,
+    onPlayTrack: widget.onPlayTrack,
+    onAddToPlaylist: widget.onAddToPlaylist, // Add this
+    isPlaying: isCurrentlyPlaying,
+  );
+},
     );
   }
 
@@ -98,11 +101,13 @@ class _TrackTile extends StatelessWidget {
   final Track track;
   final ValueChanged<Track> onPlayTrack;
   final bool isPlaying;
+  final ValueChanged<Track> onAddToPlaylist;
 
   const _TrackTile({
     required this.track,
     required this.onPlayTrack,
     required this.isPlaying,
+    required this.onAddToPlaylist,
   });
 
   @override
@@ -111,6 +116,7 @@ class _TrackTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => onPlayTrack(track),
+        onLongPress: () => onAddToPlaylist(track),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(

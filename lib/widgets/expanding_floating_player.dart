@@ -215,8 +215,9 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
   }
 
   Widget _buildExpandedView(Track currentTrack) {
-    return Padding(
-      padding: const EdgeInsets.all(20),
+  return Padding(
+    padding: const EdgeInsets.all(20),
+    child: SingleChildScrollView(
       child: Column(
         children: [
           // Header with minimize button
@@ -324,29 +325,26 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
               const SizedBox(width: 32),
 
               IconButton(
-  icon: const Icon(
-    Icons.surround_sound,
-    color: Colors.white,
-    size: 28,
-  ),
-  onPressed: () {
-  showDialog(
-    context: context,
-    builder: (context) => SpatialAudioMixer(
-      playerState: widget.playerState,
-      audioPositions: {}, // (keep your current behavior)
-      onPositionsChanged: (positions) {
-        // Handle position changes
-      },
-      audioService: widget.audioService,
-    ),
-  );
-
-
-
-  },
-  tooltip: 'Spatial Audio Mixer',
-),
+                icon: const Icon(
+                  Icons.surround_sound,
+                  color: Colors.white,
+                  size: 28,
+                ),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => SpatialAudioMixer(
+                      playerState: widget.playerState,
+                      audioPositions: {},
+                      onPositionsChanged: (positions) {
+                        // Handle position changes
+                      },
+                      audioService: widget.audioService,
+                    ),
+                  );
+                },
+                tooltip: 'Spatial Audio Mixer',
+              ),
               
               // Open player button (full screen)
               IconButton(
@@ -361,6 +359,6 @@ class _ExpandingFloatingPlayerState extends State<ExpandingFloatingPlayer>
           ),
         ],
       ),
-    );
-  }
-}
+    ),
+  );
+}}
